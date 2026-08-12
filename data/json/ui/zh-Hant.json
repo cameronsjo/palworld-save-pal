@@ -447,6 +447,7 @@
   "landing_map_point_terrain": "真實的3D地形，不是平面圖片。",
   "landing_meta_description": "在瀏覽器中即可開啟、編輯並儲存 Palworld 檔案。包含夥伴、基地、藍圖和預設。免費開源，並附有完整的 3D 世界地圖。",
   "landing_meta_title": "Palworld 儲存 Pal：在瀏覽器中編輯 Palworld 檔案",
+  "landing_mobile_notice": "Save editing works only in a desktop browser. Maps, Wiki and Breeding stay available on mobile.",
   "landing_og_description": "在瀏覽器中編輯 Palworld 存檔，支援完整的 3D 世界地圖。包含好友、基地、藍圖和預設。",
   "landing_og_title": "Palworld 拯救 Pal",
   "landing_step_drop_body": "可以是 .zip 文件，也可以是你的世界存檔資料夾。兩種方法都可以。",

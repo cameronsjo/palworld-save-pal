@@ -447,6 +447,7 @@
   "landing_map_point_terrain": "평면 이미지가 아닌 실제 3D 지형입니다.",
   "landing_meta_description": "Palworld 저장 파일을 브라우저에서 바로 열고 편집하고 저장하세요. 동료, 기지, 설계도, 사전 설정까지 모두 포함됩니다. 무료 오픈 소스 소프트웨어로, 완벽한 3D 세계 지도를 제공합니다.",
   "landing_meta_title": "Palworld Save Pal: 브라우저에서 Palworld 저장 파일을 편집하세요",
+  "landing_mobile_notice": "Save editing works only in a desktop browser. Maps, Wiki and Breeding stay available on mobile.",
   "landing_og_description": "3D 세계 지도가 완벽하게 표시되는 브라우저에서 Palworld 저장 파일을 편집하세요. 동료, 기지, 설계도 및 사전 설정도 관리할 수 있습니다.",
   "landing_og_title": "팔월드 세이브 팔",
   "landing_step_drop_body": ".zip 파일이나 월드 폴더 둘 다 가능합니다.",

@@ -447,6 +447,7 @@
   "landing_map_point_terrain": "Echtes 3D-Gelände, kein flaches Bild.",
   "landing_meta_description": "Palworld-Spielstände können direkt im Browser geöffnet, bearbeitet und gespeichert werden. Pals, Basen, Baupläne und Voreinstellungen sind enthalten. Kostenlos und Open Source, mit einer vollständigen 3D-Weltkarte.",
   "landing_meta_title": "Palworld Save Pal: Bearbeiten Sie Palworld-Spielstände in Ihrem Browser",
+  "landing_mobile_notice": "Save editing works only in a desktop browser. Maps, Wiki and Breeding stay available on mobile.",
   "landing_og_description": "Bearbeite Palworld-Spielstände direkt im Browser – mit einer vollständigen 3D-Weltkarte. Pals, Basen, Baupläne und Voreinstellungen sind enthalten.",
   "landing_og_title": "Palworld Save Pal",
   "landing_step_drop_body": "Eine .zip-Datei oder Ihr Weltordner. Beides funktioniert.",
