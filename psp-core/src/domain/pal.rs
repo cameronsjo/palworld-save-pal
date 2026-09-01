@@ -820,9 +820,9 @@ pub fn new_pal_entry(
 
     let character_data = crate::ue::games::palworld::PalCharacterData {
         object: object_props,
-        unknown_bytes: [0, 0, 0, 0],
+        unknown_bytes: Some([0, 0, 0, 0]),
         group_id: props::uuid_to_guid(group_id.unwrap_or(props::EMPTY_UUID)),
-        trailing_bytes: [0, 0, 0, 0],
+        trailing_bytes: Some([0, 0, 0, 0]),
     };
 
     let mut key_props = Properties::default();
@@ -2343,9 +2343,9 @@ mod tests {
         );
         let character_data = PalCharacterData {
             object,
-            unknown_bytes: [0; 4],
+            unknown_bytes: Some([0; 4]),
             group_id,
-            trailing_bytes: [0; 4],
+            trailing_bytes: Some([0; 4]),
         };
         let mut value_properties = Properties::default();
         value_properties.insert(
