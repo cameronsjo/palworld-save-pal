@@ -5789,7 +5789,7 @@ dependencies = [
 [[package]]
 name = "uesave"
 version = "0.7.1"
-source = "git+https://github.com/oMaN-Rod/uesave-rs.git?branch=pluggable-game-support#0aaf74173b9d7f926934c3a43f25969faa8a1af9"
+source = "git+https://github.com/cameronsjo/uesave-rs.git?branch=fix-palcharacterdata-trailer-length#8573839c84073d84e2bb8baa5f29f804606a214b"
 dependencies = [
  "bitflags 2.13.0",
  "byteorder",
