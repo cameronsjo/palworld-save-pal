@@ -32,7 +32,7 @@ psp-core = { path = "psp-core", default-features = false }
 psp-db = { path = "psp-db", default-features = false }
 psp-lua-sys = { path = "psp-lua-sys" }
 psp-plugin = { path = "psp-plugin" }
-uesave = { git = "https://github.com/oMaN-Rod/uesave-rs.git", branch = "pluggable-game-support", default-features = false }
+uesave = { git = "https://github.com/cameronsjo/uesave-rs.git", branch = "fix-palcharacterdata-trailer-length", default-features = false }
 axum = { version = "0.8", features = ["ws", "multipart"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["fs", "compression-gzip"] }
