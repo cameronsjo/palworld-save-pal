@@ -21,6 +21,7 @@
 		type NavItem,
 		type NavGroup
 	} from './navItems';
+	import ServerControlChip from './ServerControlChip.svelte';
 
 	let appState = getAppState();
 	let modal = getModalState();
@@ -143,6 +144,10 @@
 		>
 			<Icon icon={menuIcon} class="h-4 w-4" />
 		</button>
+	</div>
+
+	<div class="sidebar-label px-2.5 pb-1">
+		<ServerControlChip />
 	</div>
 
 	<nav class="flex-1 overflow-y-auto py-2">

@@ -56,6 +56,47 @@ impl ServerHandle {
     }
 }
 
+/// Registers a `native` server row pointed at `saves_path` if one doesn't
+/// already exist, so a save that's already bind-mounted into the pod shows
+/// up in the UI without an operator filling out the "Add Server" form.
+///
+/// Existence-only probe: the matched world-directory name is never read into
+/// the created row or logged — only the fixed `saves_path` from the env var
+/// is persisted. Idempotent by construction (checked-then-create, gated on
+/// an exact `saves_path` match), so it's safe to run on every startup.
+async fn auto_register_mounted_save(state: &AppState, saves_path: &str) -> anyhow::Result<()> {
+    let save_games = PathBuf::from(saves_path).join("SaveGames").join("0");
+    let has_level_sav = std::fs::read_dir(&save_games)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|world_dir| world_dir.path().join("Level.sav").is_file());
+    if !has_level_sav {
+        tracing::info!(saves_path, "AUTO_LOAD_SAVES_PATH set but no Level.sav found under it");
+        return Ok(());
+    }
+
+    let existing = psp_db::servers::list_servers(&*state.driver).await?;
+    if existing.iter().any(|record| record.saves_path == saves_path) {
+        return Ok(());
+    }
+
+    psp_db::servers::create_server(
+        &*state.driver,
+        psp_db::servers::NewServer {
+            name: "Auto-detected save".to_string(),
+            server_type: "native".to_string(),
+            saves_path: saves_path.to_string(),
+            install_path: saves_path.to_string(),
+            server_name: "Auto-detected save".to_string(),
+            ..Default::default()
+        },
+    )
+    .await?;
+    tracing::info!(saves_path, "auto-registered mounted save");
+    Ok(())
+}
+
 pub async fn start_server(config: ServerConfig) -> anyhow::Result<ServerHandle> {
     // rfd only exists under the `desktop` feature; the headless server/Docker
     // build always uses the inert NullDialogProvider.
@@ -125,6 +166,12 @@ pub async fn start_server_with(
         breeding_db: Default::default(),
         plugins: Default::default(),
     });
+    if let Ok(auto_load_saves_path) = std::env::var("AUTO_LOAD_SAVES_PATH") {
+        if let Err(error) = auto_register_mounted_save(&state, &auto_load_saves_path).await {
+            tracing::error!(%error, "AUTO_LOAD_SAVES_PATH auto-register failed; continuing without it");
+        }
+    }
+
     psp_app::handlers::plugins::seed_bundled_plugins(&state).await?;
 
     let listener = tokio::net::TcpListener::bind((config.host, config.port)).await?;
@@ -148,4 +195,66 @@ pub async fn start_server_with(
         shutdown_sender,
         serve_task,
     })
+}
+
+#[cfg(test)]
+mod auto_register_tests {
+    use crate::servers_handlers::test_env::TestEnv;
+
+    /// Builds `<root>/SaveGames/0/WORLD01/Level.sav` so
+    /// `auto_register_mounted_save` finds a mounted save to register.
+    fn write_level_sav(root: &std::path::Path) {
+        let world_dir = root.join("SaveGames").join("0").join("WORLD01");
+        std::fs::create_dir_all(&world_dir).unwrap();
+        std::fs::write(world_dir.join("Level.sav"), b"").unwrap();
+    }
+
+    #[tokio::test]
+    async fn registers_a_server_row_for_the_mounted_save() {
+        let env = TestEnv::new().await;
+        let saves = tempfile::tempdir().unwrap();
+        write_level_sav(saves.path());
+        let saves_path = saves.path().to_str().unwrap();
+
+        super::auto_register_mounted_save(&env.app, saves_path)
+            .await
+            .unwrap();
+
+        let servers = psp_db::servers::list_servers(&*env.app.driver).await.unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].saves_path, saves_path);
+        assert_eq!(servers[0].server_type, "native");
+    }
+
+    #[tokio::test]
+    async fn second_startup_against_the_same_path_does_not_duplicate() {
+        let env = TestEnv::new().await;
+        let saves = tempfile::tempdir().unwrap();
+        write_level_sav(saves.path());
+        let saves_path = saves.path().to_str().unwrap();
+
+        super::auto_register_mounted_save(&env.app, saves_path)
+            .await
+            .unwrap();
+        super::auto_register_mounted_save(&env.app, saves_path)
+            .await
+            .unwrap();
+
+        let servers = psp_db::servers::list_servers(&*env.app.driver).await.unwrap();
+        assert_eq!(servers.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn no_level_sav_registers_nothing() {
+        let env = TestEnv::new().await;
+        let saves = tempfile::tempdir().unwrap();
+        let saves_path = saves.path().to_str().unwrap();
+
+        super::auto_register_mounted_save(&env.app, saves_path)
+            .await
+            .unwrap();
+
+        let servers = psp_db::servers::list_servers(&*env.app.driver).await.unwrap();
+        assert!(servers.is_empty());
+    }
 }
