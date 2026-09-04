@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/icons/Icon.svelte';
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { getServerState, getModalState } from '$states';
 	import { Button, Card } from '$components/ui';
 	import {
@@ -11,6 +12,11 @@
 	} from '$components/servers';
 	import type { CreateServerData, ImportServerData, Server as ServerType } from '$types';
 
+	// The literal name auto_register_mounted_save (psp-server/src/lib.rs)
+	// gives the AUTO_LOAD_SAVES_PATH row -- the one hook this page has into
+	// "is this the mount-only auto-registered entry, not a real server".
+	const AUTO_LOAD_SERVER_NAME = 'Auto-detected save';
+
 	const serverState = getServerState();
 	const modal = getModalState();
 
@@ -18,6 +24,23 @@
 	const selectedServer = $derived(serverState.selectedServer);
 	const loading = $derived(serverState.loading);
 	const creationProgress = $derived(serverState.creationProgress);
+
+	// Skips the select-then-"Load in Editor" round trip for the one server
+	// this pod ever auto-registers: it exists purely so there's something to
+	// load, so there's nothing to ask the operator about. Guarded so it fires
+	// once per visit -- startPolling() re-fetches `servers` every 15s and
+	// would otherwise re-fire (and re-navigate away from wherever the
+	// operator went) on every poll tick.
+	let autoLoadAttempted = $state(false);
+
+	$effect(() => {
+		if (autoLoadAttempted || loading) return;
+		const autoServer = servers.find((s) => s.name === AUTO_LOAD_SERVER_NAME);
+		if (!autoServer) return;
+		autoLoadAttempted = true;
+		serverState.loadServerSave(autoServer.id);
+		goto('/edit');
+	});
 
 	onMount(() => {
 		serverState.loadServers();

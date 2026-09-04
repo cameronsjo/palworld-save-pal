@@ -36,7 +36,11 @@
 		} else if (isWebBuild) {
 			hasRecent().then((r) => (resumeName = r?.worldName ?? null));
 		} else {
-			goto('/upload');
+			// Docker/server deployments land here with no save loaded yet.
+			// /servers (not /upload's ad hoc drag-and-drop) is the entry
+			// point that knows about registered servers -- including the
+			// AUTO_LOAD_SAVES_PATH row, which auto-loads itself from there.
+			goto('/servers');
 		}
 	}
 
