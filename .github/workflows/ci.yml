@@ -58,6 +58,17 @@ jobs:
       - name: psp-web builds for wasm32
         run: cargo build --target wasm32-unknown-unknown -p psp-web -j 2
 
+      # --exclude psp-desktop is load-bearing, not an optimization. That crate's
+      # Tauri build script resolves `../ui_build`, which does not exist until the
+      # UI build step below runs — so a plain `--workspace` here dies with
+      # `resource path ../ui_build doesn't exist` before a single test executes.
+      # Reordering the UI build ahead of this step does not help either: it fails
+      # on its own (see the follow-up on the missing CI `.env`) and takes the
+      # test step down with it. Excluding the crate is what makes the Rust suite
+      # actually run; psp-desktop's own build is covered by desktop-rust.yml.
+      - name: Test workspace
+        run: cargo test --workspace --exclude psp-desktop
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
@@ -73,14 +84,6 @@ jobs:
         working-directory: psp-ui
         run: bun install --frozen-lockfile
 
-      # Ordered BEFORE `cargo test --workspace`, not after: psp-desktop's Tauri
-      # build script resolves `../ui_build` and fails the whole workspace build
-      # when that directory does not exist yet. With the UI built second, the
-      # test step could never run — it died on `resource path ../ui_build
-      # doesn't exist` before a single test executed.
       - name: Desktop web build succeeds
         working-directory: psp-ui
         run: bun run build
-
-      - name: Test workspace
-        run: cargo test --workspace
