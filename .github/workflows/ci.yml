@@ -58,9 +58,6 @@ jobs:
       - name: psp-web builds for wasm32
         run: cargo build --target wasm32-unknown-unknown -p psp-web -j 2
 
-      - name: Test workspace
-        run: cargo test --workspace
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
@@ -76,6 +73,14 @@ jobs:
         working-directory: psp-ui
         run: bun install --frozen-lockfile
 
+      # Ordered BEFORE `cargo test --workspace`, not after: psp-desktop's Tauri
+      # build script resolves `../ui_build` and fails the whole workspace build
+      # when that directory does not exist yet. With the UI built second, the
+      # test step could never run — it died on `resource path ../ui_build
+      # doesn't exist` before a single test executed.
       - name: Desktop web build succeeds
         working-directory: psp-ui
         run: bun run build
+
+      - name: Test workspace
+        run: cargo test --workspace
