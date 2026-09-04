@@ -21,8 +21,9 @@ struct SyncLoadedSaveFilesData {
 /// is loaded — `loaded_save_files` followed by both summary messages.
 pub async fn handle_sync_app_state(ctx: &mut HandlerCtx<'_>) -> Result<(), HandlerError> {
     let row = psp_db::settings::get_settings(&*ctx.app.driver).await?;
+    let server_managed = ctx.app.config.server_managed();
     ctx.emitter
-        .emit(MessageType::GetSettings, &settings_dto_from_row(row));
+        .emit(MessageType::GetSettings, &settings_dto_from_row(row, server_managed));
 
     let Some(session) = ctx.session.save.as_ref() else {
         tracing::warn!("no save file loaded");

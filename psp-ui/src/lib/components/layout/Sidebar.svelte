@@ -28,7 +28,13 @@
 	let expanded = persistedState('navbar.expanded', false);
 
 	const desktop = PUBLIC_DESKTOP_MODE === 'true';
-	const ctx = $derived<NavContext>({ appState, desktop, expanded: expanded.current });
+	const serverManaged = $derived(appState.settings.server_managed === true);
+	const ctx = $derived<NavContext>({
+		appState,
+		desktop,
+		serverManaged,
+		expanded: expanded.current
+	});
 
 	const activeTile = $derived(activeNavId(page.url.pathname, ctx));
 	const menuItem = $derived(navItems.find((item) => item.id === 'menu')!);
@@ -64,7 +70,10 @@
 				expanded.current = !expanded.current;
 				break;
 			case 'save':
-				appState.writeSave();
+				// Desktop writes in place; a server-managed deployment owes the
+				// restart too, which is the whole point of the edit session.
+				if (desktop) appState.writeSave();
+				else appState.writeSaveAndRestart();
 				break;
 			case 'eject':
 				handleEject();

@@ -3,7 +3,7 @@ import { UpdateAvailableModal } from '$components/modals';
 import * as m from '$i18n/messages';
 import { extractLocaleFromCookie, getLocale, setLocale } from '$i18n/runtime';
 import { send } from '$lib/utils/websocketUtils';
-import { getAppState, getModalState, getToastState } from '$states';
+import { getAppState, getControlState, getModalState, getToastState } from '$states';
 import { bumpLocaleVersion } from '$states/localeState.svelte';
 import { MessageType, type AppSettings, type SupportedLanguage } from '$types';
 import { isUpdateAvailableOnGitHub } from '$utils/appVersion';
@@ -36,6 +36,10 @@ export const getVersionHandler: WSMessageHandler = {
 export const errorHandler: WSMessageHandler = {
 	type: MessageType.ERROR,
 	async handle(data) {
+		// Fail closed on "Save & restart": if the write raised, the pending start
+		// must not fire — bringing a world up on a half-written save is worse than
+		// leaving it down. An error unrelated to a save simply finds nothing armed.
+		getControlState().disarmRestartAfterSave();
 		const errorMessage = data as { message: string; trace: string };
 		goto('/error', {
 			state: {

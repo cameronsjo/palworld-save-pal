@@ -58,9 +58,9 @@ fn pal_character_entry(instance_id: &str, save_parameter: Properties) -> MapEntr
     object.insert("SaveParameter", struct_property(save_parameter));
     let character_data = PalCharacterData {
         object,
-        unknown_bytes: [0; 4],
+        unknown_bytes: Some([0; 4]),
         group_id: psp_core::ue::FGuid::nil(),
-        trailing_bytes: [0; 4],
+        trailing_bytes: Some([0; 4]),
     };
     let mut value_properties = Properties::default();
     value_properties.insert(

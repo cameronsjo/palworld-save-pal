@@ -1,8 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/icons/Icon.svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { getServerState, getModalState } from '$states';
+	import { getControlState, getServerState, getModalState } from '$states';
 	import { Button, Card } from '$components/ui';
 	import {
 		ServerCard,
@@ -12,43 +11,69 @@
 	} from '$components/servers';
 	import type { CreateServerData, ImportServerData, Server as ServerType } from '$types';
 
-	// The literal name auto_register_mounted_save (psp-server/src/lib.rs)
-	// gives the AUTO_LOAD_SAVES_PATH row -- the one hook this page has into
-	// "is this the mount-only auto-registered entry, not a real server".
-	const AUTO_LOAD_SERVER_NAME = 'Auto-detected save';
-
 	const serverState = getServerState();
+	const control = getControlState();
 	const modal = getModalState();
 
 	const servers = $derived(serverState.servers);
 	const selectedServer = $derived(serverState.selectedServer);
 	const loading = $derived(serverState.loading);
+	const loadError = $derived(serverState.loadError);
 	const creationProgress = $derived(serverState.creationProgress);
 
-	// Skips the select-then-"Load in Editor" round trip for the one server
-	// this pod ever auto-registers: it exists purely so there's something to
-	// load, so there's nothing to ask the operator about. Guarded so it fires
-	// once per visit -- startPolling() re-fetches `servers` every 15s and
-	// would otherwise re-fire (and re-navigate away from wherever the
-	// operator went) on every poll tick.
-	let autoLoadAttempted = $state(false);
+	// An explicit two-click session, NOT an auto-load on mount. Opening this page
+	// stops nothing: a stray tab must never drop a running game — and stopping
+	// here suspends the whole ms-a2-workloads kustomization (Traefik, Vikunja,
+	// the runners), not just Palworld.
+	type SessionStage = 'idle' | 'stopping' | 'waiting' | 'loading';
+	let stage = $state<SessionStage>('idle');
+	let sessionError = $state('');
 
-	$effect(() => {
-		if (autoLoadAttempted || loading) return;
-		const autoServer = servers.find((s) => s.name === AUTO_LOAD_SERVER_NAME);
-		if (!autoServer) return;
-		autoLoadAttempted = true;
-		serverState.loadServerSave(autoServer.id);
-		goto('/edit');
-	});
+	const stageLabel: Record<SessionStage, string> = {
+		idle: '',
+		stopping: 'Stopping the server…',
+		waiting: 'Waiting for the world to close…',
+		loading: 'Loading the save…'
+	};
+
+	const sessionBusy = $derived(stage !== 'idle');
+
+	async function beginEditSession(server: ServerType) {
+		if (sessionBusy) return;
+		sessionError = '';
+		try {
+			stage = 'stopping';
+			await control.run('stop');
+
+			// The server-side "Server must be stopped" guard cannot help here: it
+			// reads native_process::process_status(record.pid), and the
+			// auto-registered row has pid: null, which reports "exited". So the
+			// stop is confirmed HERE, against safe_to_edit, or not at all.
+			stage = 'waiting';
+			await control.waitUntilSafeToEdit();
+
+			// loadedSaveFilesHandler navigates to /edit on the response frame; a
+			// goto() here would race it.
+			stage = 'loading';
+			await serverState.loadServerSave(server.id);
+		} catch (error) {
+			sessionError = error instanceof Error ? error.message : String(error);
+		} finally {
+			stage = 'idle';
+		}
+	}
+
+	let releaseControlPolling: (() => void) | null = null;
 
 	onMount(() => {
 		serverState.loadServers();
 		serverState.startPolling(15000);
+		releaseControlPolling = control.acquirePolling();
 	});
 
 	onDestroy(() => {
 		serverState.stopPolling();
+		releaseControlPolling?.();
 	});
 
 	function handleSelect(server: ServerType) {
@@ -143,7 +168,15 @@
 		{/if}
 
 		<div class="flex flex-col gap-2">
-			{#if servers.length === 0 && !loading}
+			{#if loadError}
+				<!-- A transport failure must never wear the appearance of an empty
+				     estate — that read cost a whole debugging session once. -->
+				<Card class="text-center text-red-400">
+					<Icon icon="tabler:plug-connected-x" size={32} class="mx-auto mb-2 opacity-70" />
+					<p>Could not reach the backend</p>
+					<p class="mt-1 text-sm">{loadError}</p>
+				</Card>
+			{:else if servers.length === 0 && !loading}
 				<Card class="text-surface-400 text-center">
 					<Icon icon="tabler:server" size={32} class="mx-auto mb-2 opacity-50" />
 					<p>No servers configured</p>
@@ -163,8 +196,39 @@
 		</div>
 	</div>
 
-	<div class="min-w-0 flex-1">
+	<div class="min-w-0 flex-1 overflow-y-auto">
 		{#if selectedServer}
+			<Card class="mb-4">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<div>
+						<p class="font-semibold">Edit session</p>
+						<p class="text-surface-400 text-sm">
+							Stops the server, waits until the world is closed, then opens the save.
+						</p>
+					</div>
+					<Button
+						variant="primary"
+						size="sm"
+						class="flex items-center gap-2"
+						disabled={sessionBusy || control.busy || control.unreachable}
+						onclick={() => beginEditSession(selectedServer)}
+					>
+						<Icon icon="tabler:pencil" size={14} />
+						Begin edit session
+					</Button>
+				</div>
+				{#if sessionBusy}
+					<p class="text-secondary-300 mt-3 text-sm">{stageLabel[stage]}</p>
+				{/if}
+				{#if sessionError}
+					<p class="mt-3 text-sm text-red-400">{sessionError}</p>
+				{/if}
+				{#if control.unreachable}
+					<p class="mt-3 text-sm text-red-400">
+						The control endpoint is unreachable, so the server cannot be stopped safely.
+					</p>
+				{/if}
+			</Card>
 			<ServerDetailPanel server={selectedServer} />
 		{:else}
 			<div class="text-surface-400 flex h-full items-center justify-center">

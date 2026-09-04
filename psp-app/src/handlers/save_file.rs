@@ -878,11 +878,17 @@ const BACKUP_ROOT_FILES: [&str; 4] = [
 
 /// Copies to `{backup_base}/{basename}_{%Y-%m-%d-%H-%M}`, appending a `_{%S}`
 /// suffix on collision. `backup_base` is a parameter, not a constant, so tests
-/// can point it at a `TempDir` instead of the real backups root. A missing
-/// `save_dir` reports "skipping backup" rather than failing.
+/// can point it at a `TempDir` instead of the real backups root.
+///
+/// `require_backup` decides what a missing `save_dir` means. Desktop keeps the
+/// original lenient behaviour (report "skipping backup", carry on). A
+/// server-managed deployment passes `true`: there, a save_dir that is not on
+/// disk means the write is about to land somewhere unbacked, and continuing
+/// would overwrite the world with no copy to restore from.
 fn backup_save_directory(
     save_dir: &Path,
     backup_base: &Path,
+    require_backup: bool,
     progress: &ProgressSink,
 ) -> Result<(), HandlerError> {
     std::fs::create_dir_all(backup_base).map_err(CoreError::Io)?;
@@ -899,6 +905,12 @@ fn backup_save_directory(
 
     progress("Backing up save directory... 🤓");
     if !save_dir.exists() {
+        if require_backup {
+            return Err(HandlerError::Other(format!(
+                "Refusing to write: save directory {} does not exist, so no backup was taken.",
+                save_dir.display()
+            )));
+        }
         progress(&format!(
             "Save directory {} not found, skipping backup",
             save_dir.display()
@@ -928,6 +940,19 @@ fn backup_save_directory(
                     .map_err(CoreError::Io)?;
             }
         }
+    }
+
+    // Assert the POSTCONDITION, not just the precondition. The `!save_dir.exists()`
+    // arm above is nearly unreachable on the managed path (the write pin
+    // canonicalized save_dir moments earlier), while a save_dir that exists but
+    // holds no Level.sav produces an EMPTY backup directory and returns Ok —
+    // and the overwrite then proceeds with nothing to restore from. The property
+    // worth enforcing is "a backup exists", not "the directory did".
+    if require_backup && !backup_path.join("Level.sav").is_file() {
+        return Err(HandlerError::Other(format!(
+            "Refusing to write: the backup at {} captured no Level.sav, so there is nothing to restore from.",
+            backup_path.display()
+        )));
     }
 
     Ok(())
@@ -964,9 +989,10 @@ fn write_steam_modded_save(
     level_path: &Path,
     save_dir: &Path,
     backup_base: &Path,
+    require_backup: bool,
     progress: &ProgressSink,
 ) -> Result<(), HandlerError> {
-    backup_save_directory(save_dir, backup_base, progress)?;
+    backup_save_directory(save_dir, backup_base, require_backup, progress)?;
 
     progress("Writing new save file... 🚀");
     let level_sav_bytes = session.level_sav_bytes()?;
@@ -1013,10 +1039,31 @@ fn write_steam_modded_save(
 /// Deliberately does not back up first, unlike `write_steam_modded_save`: the
 /// caller (`handlers::tools::handle_transfer_player`) already backs up via
 /// `copy_dir_ignoring` before calling this.
+///
+/// `managed_saves_root` is `Some` on a server-managed deployment. It is pinned
+/// HERE, at the sink, rather than in either caller: the target path originates
+/// in `load_source_save`'s `path` field, which `handlers::tools` uses verbatim
+/// in web mode (its desktop-mode check guards only the dialog branch), so this
+/// is a second client-steerable write target that the `save_modded_save` pin
+/// does not cover.
 pub(crate) fn write_transfer_target_save(
     session: &SaveSession,
     save_info: &psp_core::session::TransferSaveInfo,
+    managed_saves_root: Option<&Path>,
 ) -> Result<(), HandlerError> {
+    if let Some(root) = managed_saves_root {
+        pin_write_targets_under_root(
+            root,
+            &[
+                ("transfer save directory", &save_info.save_dir),
+                ("transfer Level.sav path", &save_info.level_sav),
+                ("transfer players directory", &save_info.players_dir),
+            ],
+        )?;
+        if let Some(level_meta) = &save_info.level_meta {
+            pin_write_targets_under_root(root, &[("transfer LevelMeta.sav path", level_meta)])?;
+        }
+    }
     let level_sav_bytes = session.level_sav_bytes()?;
     if let Some(parent) = save_info.level_sav.parent() {
         std::fs::create_dir_all(parent).map_err(CoreError::Io)?;
@@ -1051,6 +1098,71 @@ pub(crate) fn write_transfer_target_save(
 /// Backup root for Steam saves, anchored to the app root (`backups/steam`).
 fn steam_backup_base() -> std::path::PathBuf {
     psp_core::paths::app_root().join("backups").join("steam")
+}
+
+/// Refuses any write target that is not inside the deployment's own mounted
+/// save root.
+///
+/// EVERY path a web-mode client can steer must go through here — not just the
+/// obvious one. `save_dir` comes from a settings row a client-created server row
+/// can set; `level_path` and the GPS path come from the `select_save` path the
+/// client supplied verbatim; `unlock_map` and the transfer target take a path
+/// straight off the wire. Where the deployment mounts exactly one save, none of
+/// them has any business pointing outside it.
+///
+/// Compares CANONICAL paths, so symlinks out of the root are resolved before
+/// the prefix test rather than after it, and `Path::starts_with` compares whole
+/// components, so `/app/saves-elsewhere` does not match `/app/saves`.
+///
+/// A target that does not exist yet is legitimate — `write_transfer_target_save`
+/// creates its directories — so containment is tested against the nearest
+/// ancestor that DOES exist, and any `..` component anywhere in the path is
+/// rejected outright. Together those two rules are what make the non-existent
+/// tail safe: the existing prefix is fully resolved, and nothing in the tail can
+/// climb back out of it. When the target already exists, its nearest existing
+/// ancestor is itself and this is a plain canonical containment check.
+fn pin_write_targets_under_root(
+    root: &Path,
+    targets: &[(&str, &Path)],
+) -> Result<(), HandlerError> {
+    let canonical_root = root.canonicalize().map_err(|error| {
+        HandlerError::Other(format!(
+            "Refusing to write: mounted save root {} is not readable ({error}).",
+            root.display()
+        ))
+    })?;
+    for (label, candidate) in targets {
+        if candidate
+            .components()
+            .any(|component| component == std::path::Component::ParentDir)
+        {
+            return Err(HandlerError::Other(format!(
+                "Refusing to write: {label} {} contains a `..` segment.",
+                candidate.display()
+            )));
+        }
+        let Some(existing_ancestor) = candidate.ancestors().find(|ancestor| ancestor.exists())
+        else {
+            return Err(HandlerError::Other(format!(
+                "Refusing to write: no part of {label} {} exists on disk.",
+                candidate.display()
+            )));
+        };
+        let canonical = existing_ancestor.canonicalize().map_err(|error| {
+            HandlerError::Other(format!(
+                "Refusing to write: {label} {} could not be resolved ({error}).",
+                candidate.display()
+            ))
+        })?;
+        if !canonical.starts_with(&canonical_root) {
+            return Err(HandlerError::Other(format!(
+                "Refusing to write: {label} {} is outside the mounted save root {}.",
+                candidate.display(),
+                canonical_root.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// `data` must stay `Option<String>`: the frontend sends `null` for Steam
@@ -1088,6 +1200,34 @@ async fn save_modded_steam_save(ctx: &mut HandlerCtx<'_>) -> Result<(), HandlerE
     };
     let backup_base = steam_backup_base();
 
+    // Server-managed deployments edit exactly one mounted save, so the write is
+    // pinned to it and a missing backup is fatal. Desktop keeps the unpinned,
+    // lenient path: the operator picked the directory themselves.
+    let require_backup = match ctx.app.config.managed_saves_root.as_deref() {
+        Some(root) => {
+            // The GPS file is the easy one to miss: its path is derived at load
+            // time as save_dir.parent()/GlobalPalStorage.sav — one level ABOVE
+            // the pinned directory — and write_gps_if_loaded writes both it and
+            // a `.backup` sibling. It stays inside /app/saves in the real mount
+            // layout, but only by accident of that layout, so pin it explicitly.
+            let gps_path = ctx
+                .session
+                .save
+                .as_ref()
+                .and_then(|session| session.gps.file_path.clone());
+            let mut targets: Vec<(&str, &Path)> = vec![
+                ("save directory", Path::new(&save_dir)),
+                ("Level.sav path", &level_path),
+            ];
+            if let Some(gps_path) = gps_path.as_deref() {
+                targets.push(("Global Pal Storage path", gps_path));
+            }
+            pin_write_targets_under_root(root, &targets)?;
+            true
+        }
+        None => false,
+    };
+
     // Backup copy + re-serialize + write-back are blocking — keep them off the
     // async workers. `write_steam_modded_save` only reads the session, but the
     // borrow cannot cross into the blocking closure, so the session is taken
@@ -1100,6 +1240,7 @@ async fn save_modded_steam_save(ctx: &mut HandlerCtx<'_>) -> Result<(), HandlerE
             &level_path,
             Path::new(&save_dir),
             &backup_base,
+            require_backup,
             &progress,
         );
         (result, session_slot)
@@ -1352,7 +1493,8 @@ pub async fn handle_unlock_map(
         data.path = Some(selected.to_string_lossy().into_owned());
     }
 
-    if let Err(failure_message) = unlock_map_on_disk(&data) {
+    if let Err(failure_message) = unlock_map_on_disk(&data, ctx.app.config.managed_saves_root.as_deref())
+    {
         ctx.emitter
             .emit_error(&format!("Failed to unlock map: {failure_message}"), "");
         return Ok(());
@@ -1367,7 +1509,14 @@ pub async fn handle_unlock_map(
     Ok(())
 }
 
-fn unlock_map_on_disk(data: &UnlockMapData) -> Result<(), String> {
+/// `managed_saves_root` is `Some` on a server-managed deployment. It has to be
+/// threaded in here rather than left to the caller: `unlock_map` is dispatched
+/// with no desktop-mode gate, so a web client that supplies `path` reaches these
+/// two writes directly. The only other check is that the file is named
+/// `LocalData.sav`, which constrains the name and nothing about the directory —
+/// and the `.backup` copy below is a second primitive that creates an
+/// attacker-named file wherever the process can write.
+fn unlock_map_on_disk(data: &UnlockMapData, managed_saves_root: Option<&Path>) -> Result<(), String> {
     let path = data
         .path
         .as_deref()
@@ -1380,6 +1529,10 @@ fn unlock_map_on_disk(data: &UnlockMapData) -> Result<(), String> {
         .unwrap_or(false);
     if !is_local_data {
         return Err("Please select the LocalData.sav file.".to_string());
+    }
+    if let Some(root) = managed_saves_root {
+        pin_write_targets_under_root(root, &[("LocalData.sav path", file_path)])
+            .map_err(|error| error.to_string())?;
     }
     std::fs::copy(file_path, format!("{path}.backup")).map_err(|error| error.to_string())?;
     let local_data = std::fs::read(file_path).map_err(|error| error.to_string())?;
@@ -1780,6 +1933,174 @@ mod tests {
         );
     }
 
+    /// The same missing directory that desktop treats as "skip the backup" must
+    /// abort the write outright once a deployment manages the save.
+    #[test]
+    fn backup_save_directory_fails_closed_when_a_backup_is_required() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backup_base = temp_dir.path().join("backups/steam");
+        let absent_save_dir = temp_dir.path().join("does_not_exist");
+
+        let error = backup_save_directory(
+            &absent_save_dir,
+            &backup_base,
+            true,
+            &psp_core::progress::null_progress(),
+        )
+        .expect_err("a required backup that cannot be taken must abort the write");
+        assert!(
+            error.to_string().contains("Refusing to write"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// Builds `<temp>/saves/SaveGames/0/WORLD01/Level.sav` and returns
+    /// `(temp, root, world, level)`.
+    fn mounted_root() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path().join("saves");
+        let world = root.join("SaveGames/0/WORLD01");
+        std::fs::create_dir_all(&world).unwrap();
+        let level = world.join("Level.sav");
+        std::fs::write(&level, b"level").unwrap();
+        (temp_dir, root, world, level)
+    }
+
+    #[test]
+    fn pin_accepts_paths_inside_the_mounted_root() {
+        let (_temp, root, world, level) = mounted_root();
+        pin_write_targets_under_root(
+            &root,
+            &[("save directory", &world), ("Level.sav path", &level)],
+        )
+        .unwrap();
+    }
+
+    /// A write target that does not exist YET is legitimate — the transfer path
+    /// creates its own directories — as long as it lands inside the root.
+    #[test]
+    fn pin_accepts_a_not_yet_created_path_inside_the_mounted_root() {
+        let (_temp, root, _world, _level) = mounted_root();
+        let prospective = root.join("SaveGames/0/NEWWORLD/Players");
+        pin_write_targets_under_root(&root, &[("players directory", &prospective)]).unwrap();
+    }
+
+    #[test]
+    fn pin_refuses_a_not_yet_created_path_outside_the_mounted_root() {
+        let (temp, root, _world, _level) = mounted_root();
+        let prospective = temp.path().join("elsewhere/NEWWORLD/Players");
+        let error = pin_write_targets_under_root(&root, &[("players directory", &prospective)])
+            .expect_err("a prospective path outside the root must be refused");
+        assert!(
+            error.to_string().contains("outside the mounted save root"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn pin_refuses_a_save_dir_outside_the_mounted_root() {
+        let (temp, root, _world, _level) = mounted_root();
+        let elsewhere = temp.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+
+        let error = pin_write_targets_under_root(&root, &[("save directory", &elsewhere)])
+            .expect_err("a save_dir outside the root must be refused");
+        assert!(
+            error.to_string().contains("outside the mounted save root"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// A sibling whose NAME starts with the root's. A raw string `starts_with`
+    /// would accept this; comparing whole path components is what refuses it.
+    #[test]
+    fn pin_refuses_a_sibling_directory_sharing_the_roots_name_prefix() {
+        let (temp, root, _world, _level) = mounted_root();
+        let confusable = temp.path().join("saves-elsewhere");
+        std::fs::create_dir_all(&confusable).unwrap();
+
+        pin_write_targets_under_root(&root, &[("save directory", &confusable)])
+            .expect_err("a name-prefix sibling of the root must be refused");
+    }
+
+    /// The traversal case: a path that only LOOKS contained.
+    #[test]
+    fn pin_refuses_a_traversal_out_of_the_mounted_root() {
+        let (temp, root, _world, _level) = mounted_root();
+        let escapee = temp.path().join("elsewhere");
+        std::fs::create_dir_all(&escapee).unwrap();
+        std::fs::write(escapee.join("Level.sav"), b"level").unwrap();
+
+        let traversed = root.join("../elsewhere");
+        let error = pin_write_targets_under_root(&root, &[("save directory", &traversed)])
+            .expect_err("a `..` escape must be refused");
+        assert!(
+            error.to_string().contains("`..` segment"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// Each target is checked independently: a clean `save_dir` must not vouch
+    /// for a `level_path` pointing somewhere else. Both are client-steerable.
+    #[test]
+    fn pin_refuses_a_level_path_outside_the_mounted_root_despite_a_clean_save_dir() {
+        let (temp, root, world, _level) = mounted_root();
+        let elsewhere = temp.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let stray_level = elsewhere.join("Level.sav");
+        std::fs::write(&stray_level, b"level").unwrap();
+
+        pin_write_targets_under_root(
+            &root,
+            &[("save directory", &world), ("Level.sav path", &stray_level)],
+        )
+        .expect_err("a level_path outside the root must be refused");
+    }
+
+    /// The `unlock_map` sink. `LocalData.sav` is the ONLY thing its own check
+    /// constrains, and that check says nothing about the directory.
+    #[test]
+    fn unlock_map_refuses_a_local_data_path_outside_the_mounted_root() {
+        let (temp, root, _world, _level) = mounted_root();
+        let elsewhere = temp.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let victim = elsewhere.join("LocalData.sav");
+        std::fs::write(&victim, b"local").unwrap();
+
+        let data = UnlockMapData {
+            path: Some(victim.to_string_lossy().into_owned()),
+        };
+        let error = unlock_map_on_disk(&data, Some(&root))
+            .expect_err("unlock_map must not write outside the mounted save root");
+        assert!(
+            error.contains("outside the mounted save root"),
+            "unexpected error: {error}"
+        );
+        // The `.backup` sibling is a write primitive of its own — prove it never
+        // happened, not just that the main write did not.
+        assert!(
+            !elsewhere.join("LocalData.sav.backup").exists(),
+            "the refusal must land BEFORE the .backup copy"
+        );
+    }
+
+    /// Desktop keeps the unpinned behaviour: the operator picked the file.
+    #[test]
+    fn unlock_map_is_unpinned_when_no_save_root_is_managed() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("LocalData.sav");
+        std::fs::write(&path, b"not a real sav").unwrap();
+        let data = UnlockMapData {
+            path: Some(path.to_string_lossy().into_owned()),
+        };
+        // Fails on the SAV parse, not on containment — which is the point.
+        let error = unlock_map_on_disk(&data, None).expect_err("garbage bytes cannot parse");
+        assert!(
+            !error.contains("mounted save root"),
+            "unmanaged mode must not apply the pin: {error}"
+        );
+    }
+
     /// A missing `save_dir` must copy nothing and report "skipping backup".
     #[test]
     fn backup_save_directory_skips_and_reports_a_missing_directory() {
@@ -1794,7 +2115,7 @@ mod tests {
             recorded_for_sink.lock().unwrap().push(message.to_string());
         });
 
-        backup_save_directory(&absent_save_dir, &backup_base, &progress).unwrap();
+        backup_save_directory(&absent_save_dir, &backup_base, false, &progress).unwrap();
 
         let messages = recorded.lock().unwrap();
         assert!(messages
@@ -1841,6 +2162,7 @@ mod tests {
         backup_save_directory(
             &save_dir,
             &backup_base,
+            false,
             &psp_core::progress::null_progress(),
         )
         .unwrap();
@@ -1910,6 +2232,7 @@ mod tests {
             &level_path,
             &save_dir,
             &backup_base,
+            true,
             &psp_core::progress::null_progress(),
         )
         .unwrap();

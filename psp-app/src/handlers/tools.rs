@@ -314,12 +314,17 @@ fn copy_dir_ignoring(
 fn backup_and_write_transfer_target(
     target: &TransferTarget,
     backup_path: &std::path::Path,
+    managed_saves_root: Option<std::path::PathBuf>,
 ) -> Result<(), HandlerError> {
     if !backup_path.exists() {
         copy_dir_ignoring(&target.save_info.save_dir, backup_path, "backups")
             .map_err(|error| HandlerError::Other(error.to_string()))?;
     }
-    save_file::write_transfer_target_save(&target.session, &target.save_info)
+    save_file::write_transfer_target_save(
+        &target.session,
+        &target.save_info,
+        managed_saves_root.as_deref(),
+    )
 }
 
 /// A missing target is reported before a missing source. A successful transfer
@@ -417,8 +422,11 @@ pub async fn handle_transfer_player(
             .transfer_target
             .take()
             .expect("checked Some above");
+        // Read before the move: the blocking closure cannot borrow ctx.
+        let managed_saves_root = ctx.app.config.managed_saves_root.clone();
         let (write_result, target) = crate::blocking::run_blocking(move || {
-            let result = backup_and_write_transfer_target(&target_slot, &backup_path);
+            let result =
+                backup_and_write_transfer_target(&target_slot, &backup_path, managed_saves_root);
             (result, target_slot)
         })
         .await;

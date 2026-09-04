@@ -97,6 +97,20 @@ async fn auto_register_mounted_save(state: &AppState, saves_path: &str) -> anyho
     Ok(())
 }
 
+/// Splits `PSP_ALLOWED_ORIGINS` on commas, trimming whitespace and dropping
+/// empties, so `"https://a.example, https://b.example"` and a trailing comma
+/// both parse. An unset or all-empty value yields an EMPTY vec, which
+/// `ws::origin_is_allowed` reads as "same-origin only" — never as "allow all".
+pub fn parse_allowed_ws_origins(configured: Option<&str>) -> Vec<String> {
+    configured
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 pub async fn start_server(config: ServerConfig) -> anyhow::Result<ServerHandle> {
     // rfd only exists under the `desktop` feature; the headless server/Docker
     // build always uses the inert NullDialogProvider.
@@ -147,9 +161,20 @@ pub async fn start_server_with(
         .parent()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
+    // Read once, here: `managed_saves_root` is what pins the write-back target,
+    // so it must be the SAME value the auto-registration below uses. Re-reading
+    // the env var at each consumer would let the two drift.
+    let managed_saves_root = std::env::var("AUTO_LOAD_SAVES_PATH")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
     let state = Arc::new(AppState {
         config: AppConfig {
             desktop_mode: config.desktop_mode,
+            managed_saves_root: managed_saves_root.clone(),
+            allowed_ws_origins: parse_allowed_ws_origins(
+                std::env::var("PSP_ALLOWED_ORIGINS").ok().as_deref(),
+            ),
         },
         game_data,
         driver: Arc::new(psp_db::SqlxSqliteDriver::new(db)),
@@ -166,7 +191,8 @@ pub async fn start_server_with(
         breeding_db: Default::default(),
         plugins: Default::default(),
     });
-    if let Ok(auto_load_saves_path) = std::env::var("AUTO_LOAD_SAVES_PATH") {
+    if let Some(auto_load_saves_path) = managed_saves_root.as_deref() {
+        let auto_load_saves_path = auto_load_saves_path.to_string_lossy().into_owned();
         if let Err(error) = auto_register_mounted_save(&state, &auto_load_saves_path).await {
             tracing::error!(%error, "AUTO_LOAD_SAVES_PATH auto-register failed; continuing without it");
         }

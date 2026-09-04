@@ -31,6 +31,7 @@ async fn test_router(temp_dir: &tempfile::TempDir) -> axum::Router {
         Arc::new(AppState {
             config: AppConfig {
                 desktop_mode: false,
+                ..Default::default()
             },
             game_data,
             driver: Arc::new(psp_db::SqlxSqliteDriver::new(db)),

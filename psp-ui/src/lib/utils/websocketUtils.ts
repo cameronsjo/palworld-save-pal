@@ -15,14 +15,20 @@ export async function sendAndWait<T>(type: MessageType, data?: any): Promise<T> 
 	return response.data;
 }
 
+/** Rejects when the frame could not be put on the wire. Callers that show a
+ *  loading state MUST use this, not `send`: a dropped frame means the response
+ *  they are waiting for is never coming. */
+export function sendOrThrow(type: MessageType, data?: any): Promise<void> {
+	return getSocketState().send(JSON.stringify({ type, data }));
+}
+
+/** Fire-and-forget. Logs a send failure rather than leaving it as an unhandled
+ *  rejection — a silently dropped frame is how `/servers` rendered an empty
+ *  list with a clean console. */
 export function send(type: MessageType, data?: any): void {
-	const ws = getSocketState();
-	ws.send(
-		JSON.stringify({
-			type,
-			data
-		})
-	);
+	void sendOrThrow(type, data).catch((error) => {
+		console.error(`[psp] failed to send ${type}:`, error);
+	});
 }
 
 /** Sends bulk bytes. May transfer the buffer — do not reuse `bytes` after. */

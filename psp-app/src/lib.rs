@@ -61,9 +61,30 @@ impl SessionStore {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AppConfig {
     pub desktop_mode: bool,
+    /// The one save root this deployment is allowed to write, set from
+    /// `AUTO_LOAD_SAVES_PATH`. `Some` means *server-managed*: the save is
+    /// mounted by the deployment rather than picked by the operator, so
+    /// write-back is pinned under this root and a client-supplied path outside
+    /// it is refused. `None` (desktop, tests, a plain `docker run`) keeps the
+    /// original unpinned behaviour.
+    pub managed_saves_root: Option<std::path::PathBuf>,
+    /// Websocket `Origin` allowlist from `PSP_ALLOWED_ORIGINS`. Empty means
+    /// same-origin only — the `Origin` header's host:port must equal the
+    /// request's `Host`. Never consulted in desktop mode, which serves over
+    /// loopback to its own webview.
+    pub allowed_ws_origins: Vec<String>,
+}
+
+impl AppConfig {
+    /// True when the deployment mounts the save it edits. Drives the write-back
+    /// pin (`managed_saves_root`) and, separately, a UI rendering hint — no
+    /// authorization decision may key on the value the client is told.
+    pub fn server_managed(&self) -> bool {
+        self.managed_saves_root.is_some()
+    }
 }
 
 pub struct AppState {
@@ -178,6 +199,7 @@ pub mod test_support {
             let app = Arc::new(AppState {
                 config: AppConfig {
                     desktop_mode: false,
+                    ..Default::default()
                 },
                 game_data,
                 driver: Arc::new(psp_db::SqlxSqliteDriver::new(pool)),

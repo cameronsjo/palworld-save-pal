@@ -4,10 +4,19 @@ import type { WSHandlerContext } from '$lib/ws/types';
 import { type Message } from '$types';
 
 const RECONNECT_DELAY = 5000;
+/** How long `send` waits for a socket before giving up. Generous: it covers a
+ *  reconnect (5s) plus the handshake, so only a genuinely dead backend trips it. */
+const SEND_READY_TIMEOUT = 15000;
+const READY_POLL_INTERVAL = 250;
 
 class SocketState {
 	#clientId = Date.now();
-	#websocket!: WebSocket;
+	// Optional, NOT `!`: a route's `onMount` runs BEFORE the layout's, so the
+	// first `send()` of a page load routinely happens before `connect()` has
+	// assigned this. Asserting it non-null turned that ordering into a
+	// `TypeError` inside an unawaited async call — swallowed, leaving the caller
+	// stuck on `loading` with an empty list and a clean console.
+	#websocket: WebSocket | undefined;
 	// $state.raw: handler-routed frames are dispatched and forgotten — nothing
 	// reads `ws.message` deeply, so a deep proxy only adds per-payload cost.
 	#message = $state.raw<Message | null>(null);
@@ -58,12 +67,18 @@ class SocketState {
 	}
 
 	isConnected(): boolean {
-		return this.#websocket.readyState === this.#websocket.OPEN;
+		return this.#websocket?.readyState === WebSocket.OPEN;
 	}
 
 	async send(messageData: string) {
-		while (this.#websocket.readyState !== this.#websocket.OPEN) {
-			await new Promise((resolve) => setTimeout(resolve, 250));
+		const deadline = Date.now() + SEND_READY_TIMEOUT;
+		while (!this.isConnected()) {
+			if (Date.now() > deadline) {
+				// Throwing beats waiting forever: a caller that set a `loading`
+				// flag can only clear it if it hears about the failure.
+				throw new Error('Timed out waiting for the websocket to connect');
+			}
+			await new Promise((resolve) => setTimeout(resolve, READY_POLL_INTERVAL));
 		}
 		// Dev-only and type-only — see the note in onmessage above. The type is
 		// pulled out with a regex instead of JSON.parse so logging never pays a
@@ -72,7 +87,7 @@ class SocketState {
 			const type = messageData.match(/"type"\s*:\s*"([^"]+)"/)?.[1];
 			console.log('Sending message:', type ?? messageData);
 		}
-		this.#websocket.send(messageData);
+		this.#websocket!.send(messageData);
 	}
 
 	// A WebSocket frame the backend parses as text, so bytes still go over as a

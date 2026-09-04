@@ -7,7 +7,7 @@ import type {
 	ImportServerData
 } from '$types';
 import { MessageType } from '$types';
-import { send, sendAndWait } from '$utils/websocketUtils';
+import { send, sendAndWait, sendOrThrow } from '$utils/websocketUtils';
 
 class ServerState {
 	servers = $state<Server[]>([]);
@@ -22,9 +22,23 @@ class ServerState {
 
 	#pollInterval: ReturnType<typeof setInterval> | null = null;
 
+	/** Set when the list request itself could not be sent. Rendered in place of
+	 *  the "No servers configured" card so a transport failure never wears the
+	 *  appearance of an empty estate. */
+	loadError = $state('');
+
 	async loadServers(): Promise<void> {
 		this.loading = true;
-		send(MessageType.LIST_SERVERS);
+		try {
+			await sendOrThrow(MessageType.LIST_SERVERS);
+			this.loadError = '';
+		} catch (error) {
+			// `loading` must be cleared here: nothing else will, because the
+			// response frame that normally clears it is never coming.
+			this.loading = false;
+			this.loadError = error instanceof Error ? error.message : String(error);
+			console.error('[psp] list_servers could not be sent:', error);
+		}
 	}
 
 	async selectServer(serverId: number): Promise<void> {
@@ -100,8 +114,11 @@ class ServerState {
 		send(MessageType.DETECT_WORKSHOP_DIR);
 	}
 
+	/** Throws if the request could not be sent. The response
+	 *  (`loaded_save_files`) is what navigates to the editor, so a dropped frame
+	 *  here means the editor silently never opens. */
 	async loadServerSave(serverId: number): Promise<void> {
-		send(MessageType.LOAD_SERVER_SAVE, { server_id: serverId });
+		await sendOrThrow(MessageType.LOAD_SERVER_SAVE, { server_id: serverId });
 	}
 
 	async loadStats(serverId: number): Promise<void> {

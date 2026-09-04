@@ -290,9 +290,9 @@ fn player_character_entry(player_id: Uuid) -> MapEntry {
     );
     let character_data = psp_core::ue::games::palworld::PalCharacterData {
         object: object_props,
-        unknown_bytes: [0; 4],
+        unknown_bytes: Some([0; 4]),
         group_id: psp_core::ue::FGuid::nil(),
-        trailing_bytes: [0; 4],
+        trailing_bytes: Some([0; 4]),
     };
     let mut value_props = Properties::default();
     value_props.insert(

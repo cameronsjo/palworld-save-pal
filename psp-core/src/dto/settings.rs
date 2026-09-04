@@ -10,6 +10,13 @@ pub struct SettingsDto {
     pub new_pal_prefix: String,
     pub debug_mode: bool,
     pub cheat_mode: bool,
+    /// True when the deployment mounts the save it edits, computed from
+    /// `AppConfig` at emit time. Deliberately NOT a `settings` table column and
+    /// not in `SettingsUpdateDto`: the NavBar echoes the whole settings object
+    /// back through `update_settings`, so a persisted field here would be
+    /// client-assertable. It is a RENDERING HINT — nothing may authorize on it.
+    #[serde(default)]
+    pub server_managed: bool,
 }
 
 /// `update_settings` request payload. Deliberately has no `save_dir`: that
@@ -28,7 +35,7 @@ mod tests {
     use super::{SettingsDto, SettingsUpdateDto};
 
     #[test]
-    fn settings_dto_serializes_all_six_fields_in_python_order() {
+    fn settings_dto_serializes_every_field_in_python_order() {
         let dto = SettingsDto {
             language: "en".into(),
             save_dir: "C:\\Saves".into(),
@@ -36,11 +43,12 @@ mod tests {
             new_pal_prefix: "🆕".into(),
             debug_mode: false,
             cheat_mode: true,
+            server_managed: true,
         };
         let json_text = serde_json::to_string(&dto).unwrap();
         assert_eq!(
             json_text,
-            r#"{"language":"en","save_dir":"C:\\Saves","clone_prefix":"©️","new_pal_prefix":"🆕","debug_mode":false,"cheat_mode":true}"#
+            r#"{"language":"en","save_dir":"C:\\Saves","clone_prefix":"©️","new_pal_prefix":"🆕","debug_mode":false,"cheat_mode":true,"server_managed":true}"#
         );
     }
 

@@ -1,55 +1,23 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/icons/Icon.svelte';
+	import { getControlState } from '$states';
 
-	// Relative URLs only -- this chip is same-origin with /control once the
-	// editor and control services are merged behind one Ingress host, so no
-	// CORS handling is needed here or on the /control side.
-	const STATUS_URL = '/control/status';
-	const CSRF_HEADER = 'X-Palworld-Control';
-	const POLL_MS = 5000;
+	// The polling, the fetches and the status shape all live in controlState now,
+	// so the edit-session flow on /servers can read `safe_to_edit` too. This
+	// component is the rendering of that state, nothing more.
+	const control = getControlState();
 
-	type ControlStatus = {
-		replicas?: string | null;
-		suspended?: boolean;
-		pod_phase?: string | null;
-		safe_to_edit?: boolean;
-		busy?: boolean;
-		error?: string;
-	};
-
-	let status = $state<ControlStatus | null>(null);
-	let unreachable = $state(false);
-	let acting = $state(false);
-
-	async function refresh(): Promise<void> {
-		try {
-			const response = await fetch(STATUS_URL);
-			const body = (await response.json()) as ControlStatus;
-			status = body;
-			unreachable = false;
-		} catch {
-			unreachable = true;
-		}
-	}
+	const status = $derived(control.status);
+	const unreachable = $derived(control.unreachable);
+	const acting = $derived(control.acting);
 
 	async function run(verb: 'stop' | 'start'): Promise<void> {
-		acting = true;
-		try {
-			await fetch(`/control/${verb}`, {
-				method: 'POST',
-				headers: { [CSRF_HEADER]: '1' }
-			});
-		} finally {
-			acting = false;
-			await refresh();
-		}
+		// The chip's buttons are the deliberate, operator-driven path; a failure
+		// here is already visible in the status line the next poll renders.
+		await control.run(verb).catch((error) => console.error(`[psp] ${verb} failed:`, error));
 	}
 
-	$effect(() => {
-		refresh();
-		const interval = setInterval(refresh, POLL_MS);
-		return () => clearInterval(interval);
-	});
+	$effect(() => control.acquirePolling());
 </script>
 
 <div class="server-control-chip" title={status?.error ?? undefined}>

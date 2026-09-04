@@ -1840,9 +1840,9 @@ mod tests {
         );
         let character_data = PalCharacterData {
             object,
-            unknown_bytes: [0; 4],
+            unknown_bytes: Some([0; 4]),
             group_id,
-            trailing_bytes: [0; 4],
+            trailing_bytes: Some([0; 4]),
         };
         let mut value_properties = Properties::default();
         value_properties.insert(

@@ -14,7 +14,8 @@ import {
 	processPlayers,
 	saveState,
 	saveUpspalChanges,
-	writeSave
+	writeSave,
+	writeSaveAndRestart
 } from './saveOperations.svelte';
 
 export class AppState {
@@ -170,6 +171,11 @@ export class AppState {
 
 	async writeSave() {
 		return writeSave(this);
+	}
+
+	/** Write-back followed by a server start, but only if the write succeeded. */
+	async writeSaveAndRestart() {
+		return writeSaveAndRestart(this);
 	}
 }
 

@@ -6,6 +6,7 @@ import { upsState } from '$states';
 import type { GuildDTO, ItemContainer, UPSPal } from '$types';
 import { EntryState, MessageType, type Pal, type Player } from '$types';
 import { deepCopy } from '$utils';
+import { getControlState } from './controlState.svelte';
 import { getModalState } from './modalState.svelte';
 import { getPalEditorState } from './palEditorState.svelte';
 import type { AppState } from './appState.svelte';
@@ -323,5 +324,29 @@ export async function writeSave(state: AppState) {
 		await goto('/loading');
 
 		send(MessageType.SAVE_MODDED_SAVE, null);
+	}
+}
+
+/**
+ * The second half of the edit session: write the save back, and only if that
+ * write succeeds, start the game server again.
+ *
+ * The start is armed here and fired by `saveModdedSaveHandler`, which runs on
+ * the SAVE_MODDED_SAVE *success* frame. A failed write emits an error frame
+ * instead, that handler never runs, and the server deliberately stays down —
+ * bringing a world back up on top of a half-written save is the outcome this
+ * ordering exists to prevent.
+ */
+export async function writeSaveAndRestart(state: AppState) {
+	if (!state.saveFile) return;
+	getControlState().armRestartAfterSave();
+	try {
+		await writeSave(state);
+	} catch (error) {
+		// writeSave threw before the frame went out, so nothing will ever consume
+		// the arm — clear it rather than leaving it primed for an unrelated later
+		// save to fire a start off.
+		getControlState().disarmRestartAfterSave();
+		throw error;
 	}
 }

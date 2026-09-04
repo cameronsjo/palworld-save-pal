@@ -459,7 +459,11 @@ async fn write_loaded_save_to_steam_dir(
         players_dir: output_dir.join("Players"),
         save_dir: output_dir.to_path_buf(),
     };
-    crate::handlers::save_file::write_transfer_target_save(session, &save_info)?;
+    crate::handlers::save_file::write_transfer_target_save(
+        session,
+        &save_info,
+        ctx.app.config.managed_saves_root.as_deref(),
+    )?;
     progress("Conversion complete!");
     let output = output_dir.to_string_lossy().into_owned();
     ctx.emitter.emit(

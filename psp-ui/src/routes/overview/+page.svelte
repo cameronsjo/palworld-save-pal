@@ -28,6 +28,11 @@
 	const modal = getModalState();
 	const overviewState = getOverviewState();
 	const isDesktopMode = PUBLIC_DESKTOP_MODE === 'true';
+	// Rendering hint from the backend's get_settings (computed there, never
+	// persisted): the deployment mounts the save, so write-back to disk works
+	// even though PUBLIC_DESKTOP_MODE is baked false in the Docker image. This
+	// only decides which buttons appear — the write is pinned server-side.
+	const serverManaged = $derived(appState.settings.server_managed === true);
 
 	const steamIcon = assetLoader.loadSvg(`${ASSET_DATA_PATH}/img/app/steam.svg`);
 	const xboxIcon = assetLoader.loadSvg(`${ASSET_DATA_PATH}/img/app/xbox.svg`);
@@ -163,6 +168,19 @@
 								{c.save}
 							</Button>
 						{:else}
+							{#if serverManaged}
+								<!-- Second half of the edit session. Deliberately paired with, not
+								     instead of, Download: the round trip is the point here, but a
+								     copy out is still worth having. -->
+								<Button
+									variant="primary"
+									size="sm"
+									onclick={() => appState.writeSaveAndRestart()}
+								>
+									<Icon icon="tabler:device-floppy" size={14} />
+									Save &amp; restart
+								</Button>
+							{/if}
 							<Button variant="outline" size="sm" onclick={handleDownloadSaveFile}>
 								<Icon icon="tabler:download" size={14} />
 								{m.download()}

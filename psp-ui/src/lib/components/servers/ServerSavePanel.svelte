@@ -1,18 +1,30 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/icons/Icon.svelte';
 	import type { Server } from '$types';
-	import { getServerState, getModalState } from '$states';
+	import { getAppState, getControlState, getServerState, getModalState } from '$states';
 	import { Button, Card } from '$components/ui';
 	import { goto } from '$app/navigation';
 
 	let { server } = $props<{ server: Server }>();
 
+	const appState = getAppState();
 	const serverState = getServerState();
+	const control = getControlState();
 	const modal = getModalState();
 
 	const isRunning = $derived(server.status?.running ?? false);
 
+	// `isRunning` is useless on a server-managed deployment: it comes from
+	// native_process::process_status(record.pid), and the auto-registered row has
+	// pid: null, which reports "exited" whether or not the game is up. So this
+	// raw load button would happily open a world the running server still holds
+	// open -- exactly what "Begin edit session" exists to prevent. Where the
+	// deployment manages the save, defer to /control's safe_to_edit instead.
+	const serverManaged = $derived(appState.settings.server_managed === true);
+	const blockedByControl = $derived(serverManaged && !control.safeToEdit);
+
 	async function handleLoadSave() {
+		if (blockedByControl) return;
 		if (isRunning) {
 			const confirmed = await modal.showConfirmModal({
 				title: 'Server is Running',
@@ -55,8 +67,14 @@
 					Load this server's save files into the editor for viewing and modification.
 				</p>
 				<p class="text-surface-500 mt-1 text-xs">Save path: {server.saves_path}</p>
+				{#if blockedByControl}
+					<p class="mt-1 text-xs text-yellow-400">
+						Use <strong>Begin edit session</strong> — the game server is still holding this
+						world open.
+					</p>
+				{/if}
 			</div>
-			<Button variant="primary" onclick={handleLoadSave}>
+			<Button variant="primary" onclick={handleLoadSave} disabled={blockedByControl}>
 				<Icon icon="tabler:folder-open" size={14} />
 				Load in Editor
 			</Button>

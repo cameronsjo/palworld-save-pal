@@ -8,7 +8,7 @@ import {
 	getStoredSelectedPlayerUid,
 	setStoredSessionId
 } from '$lib/utils/sessionPersistence';
-import { getAppState, getToastState } from '$states';
+import { getAppState, getControlState, getToastState } from '$states';
 import { MessageType } from '$types';
 import { unzipSync } from 'fflate';
 import type { WSMessageHandler } from '../types';
@@ -73,6 +73,31 @@ export const saveModdedSaveHandler: WSMessageHandler = {
 	async handle(data, { goto }) {
 		const toast = getToastState();
 		toast.add(data, m.toast_saved(), 'success');
+
+		// This frame is the ONLY success signal for the write. A failed write
+		// emits an error frame instead, so reaching here is what makes it safe to
+		// bring the world back up. Fired before the navigation so a slow /control
+		// round trip cannot be cut short by the route change.
+		const control = getControlState();
+		if (control.consumeRestartAfterSave()) {
+			try {
+				await control.run('start');
+				toast.add(
+					'Save written and the server is starting back up.',
+					'Save & restart',
+					'success'
+				);
+			} catch (error) {
+				toast.add(
+					`The save was written, but starting the server failed: ${
+						error instanceof Error ? error.message : String(error)
+					}. Use Start in the control chip.`,
+					'Server not restarted',
+					'error'
+				);
+			}
+		}
+
 		await goto('/overview');
 	}
 };

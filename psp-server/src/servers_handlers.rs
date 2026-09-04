@@ -1332,6 +1332,7 @@ pub(crate) mod test_env {
             let app = Arc::new(AppState {
                 config: AppConfig {
                     desktop_mode: false,
+                    ..Default::default()
                 },
                 game_data,
                 driver: Arc::new(psp_db::SqlxSqliteDriver::new(db)),

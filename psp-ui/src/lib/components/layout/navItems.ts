@@ -12,6 +12,9 @@ export type NavAction = 'toggle-expanded' | 'save' | 'eject' | 'open-folder' | '
 export type NavContext = {
 	appState: AppState;
 	desktop: boolean;
+	/** The backend mounts the save it edits, so write-back works in a non-desktop
+	 *  build. A rendering hint only — the write is pinned server-side. */
+	serverManaged: boolean;
 	expanded: boolean;
 };
 
@@ -49,7 +52,7 @@ export const navItems: NavItem[] = [
 		icon: () => 'tabler:device-floppy',
 		label: () => c.save,
 		action: 'save',
-		visible: (ctx) => Boolean(ctx.appState.saveFile) && ctx.desktop
+		visible: (ctx) => Boolean(ctx.appState.saveFile) && (ctx.desktop || ctx.serverManaged)
 	},
 	{
 		id: 'eject',
