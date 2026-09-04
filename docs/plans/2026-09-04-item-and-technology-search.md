@@ -28,6 +28,14 @@ Filtering and inventory-allocation decisions will live in pure, typed helper fun
 - [x] Preserve the existing single-slot item editor and existing **Fill inventory** action.
 - [x] Add typed technology filtering helpers and behavior tests for all searchable fields.
 - [x] Add technology search while preserving level grouping and selection state.
-- [ ] Run focused unit tests, Svelte diagnostics, lint, and the production UI build.
-- [ ] Commit and push the implementation to `main`.
+- [x] Run focused unit tests, Svelte diagnostics, lint, and the production UI build.
+- [x] Commit and push the implementation to `main`.
 - [ ] Run `build-image.yml`, record the produced editor image digest, and deploy it through the homelab manifest PR.
+
+## Verification notes
+
+- The focused item and technology helper suite passes 14 tests.
+- The production UI build succeeds with the web environment.
+- `svelte-check` reports no errors in changed files; its full-project run remains red on the pre-existing tuple inference error in `src/routes/layoutPathRestore.test.ts:26`.
+- The full unit suite remains red on 10 pre-existing `MapLayerPanel` assertions; 1,732 tests pass and this change does not touch that component or its tests.
+- This repository has no changelog file, so this consumer-visible change cannot add an entry without introducing a new release-documentation convention.

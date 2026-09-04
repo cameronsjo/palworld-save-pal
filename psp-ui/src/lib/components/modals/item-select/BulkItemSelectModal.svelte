@@ -8,14 +8,21 @@
 	import { focusModal } from '$utils/modalUtils';
 	import SvelteVirtualList from '@humanspeak/svelte-virtual-list';
 	import { onMount } from 'svelte';
-	import { filterItems, ITEM_RARITIES, type ItemStackSelection } from './bulkItemPicker';
+	import {
+		filterItems,
+		getMaximumStackCount,
+		ITEM_RARITIES,
+		type ItemStackSelection
+	} from './bulkItemPicker';
 	import { getBackgroundColor, getItemIcon, isSelectableItem } from './itemUtils';
 
 	let {
 		availableSlots,
+		cheatMode,
 		closeModal
 	}: {
 		availableSlots: number;
+		cheatMode: boolean;
 		closeModal: (value?: ItemStackSelection[]) => void;
 	} = $props();
 
@@ -33,16 +40,18 @@
 		[Rarity.Legendary]: m.legendary()
 	};
 
-	const items: Item[] = Object.values(itemsData.items)
-		.filter(
-			(item: Item): boolean =>
-				isSelectableItem(item) &&
-				item.details.group !== 'KeyItem' &&
-				item.details.dynamic?.type !== 'egg'
-		)
-		.sort((left: Item, right: Item): number =>
-			left.info.localized_name.localeCompare(right.info.localized_name)
-		);
+	const items: Item[] = $derived.by(() =>
+		Object.values(itemsData.items)
+			.filter(
+				(item: Item): boolean =>
+					isSelectableItem(item) &&
+					item.details.group !== 'KeyItem' &&
+					item.details.dynamic?.type !== 'egg'
+			)
+			.sort((left: Item, right: Item): number =>
+				left.info.localized_name.localeCompare(right.info.localized_name)
+			)
+	);
 	const filteredItems = $derived(filterItems(items, query, selectedRarities));
 	const selectedCount = $derived(selectedItemIds.length);
 
@@ -71,7 +80,7 @@
 	}
 
 	function updateCount(item: Item, value: number): void {
-		const maximumCount = Math.max(1, item.details.max_stack_count);
+		const maximumCount = getMaximumStackCount(item, cheatMode);
 		const count = Number.isFinite(value) ? Math.min(maximumCount, Math.max(1, value)) : 1;
 		countsByItemId = { ...countsByItemId, [item.id]: count };
 	}
@@ -103,8 +112,8 @@
 					{m.slots_available_in_entity({ count: availableSlots, entity: m.inventory() })}
 				</p>
 			</div>
-			<span class="text-surface-300 text-sm">
-				{m.selected_of_total({ selected: selectedCount, total: filteredItems.length })}
+			<span class="text-surface-300 text-sm" aria-live="polite">
+				{m.selected_of_total({ selected: selectedCount, total: availableSlots })}
 			</span>
 		</div>
 
@@ -112,10 +121,11 @@
 			type="search"
 			bind:value={query}
 			placeholder={m.search_entity({ entity: m.item({ count: 2 }) })}
+			aria-label={m.search_entity({ entity: m.item({ count: 2 }) })}
 			inputClass="w-full"
 		/>
 
-		<div class="mb-3 flex flex-wrap gap-2" aria-label="Item rarity filters">
+		<div class="mb-3 flex flex-wrap gap-2" role="group" aria-label="Item rarity filters">
 			{#each ITEM_RARITIES as rarity}
 				<button
 					type="button"
@@ -176,10 +186,10 @@
 										<input
 											type="number"
 											min="1"
-											max={item.details.max_stack_count}
+											max={getMaximumStackCount(item, cheatMode)}
 											value={countsByItemId[item.id] ?? 1}
 											class="input w-24 rounded-xs p-2"
-											oninput={(event) => updateCount(item, event.currentTarget.valueAsNumber)}
+											onchange={(event) => updateCount(item, event.currentTarget.valueAsNumber)}
 										/>
 									</label>
 								{/if}

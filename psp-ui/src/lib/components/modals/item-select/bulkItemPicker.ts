@@ -67,14 +67,12 @@ export function appendItemStacksToEmptySlots(
 		if (!targetSlot) break;
 
 		const item = itemById.get(selection.itemId);
-		if (!item || selection.count < 1) continue;
+		if (!item) continue;
 
-		const maximumCount =
-			item.details.max_stack_count === 9999 && cheatMode
-				? 999999999
-				: Math.max(1, item.details.max_stack_count);
+		const maximumCount = getMaximumStackCount(item, cheatMode);
+		const requestedCount = Number.isFinite(selection.count) ? Math.max(1, selection.count) : 1;
 		targetSlot.static_id = item.id;
-		targetSlot.count = Math.min(selection.count, maximumCount);
+		targetSlot.count = Math.min(requestedCount, maximumCount);
 		targetSlot.dynamic_item = createDynamicItem(item);
 		addedCount += 1;
 	}
@@ -84,6 +82,11 @@ export function appendItemStacksToEmptySlots(
 		addedCount,
 		skippedCount: Math.max(0, selections.length - addedCount)
 	};
+}
+
+export function getMaximumStackCount(item: Item, cheatMode: boolean): number {
+	const configuredMaximum = Math.max(1, item.details.max_stack_count || 1);
+	return configuredMaximum === 9999 && cheatMode ? 999999999 : configuredMaximum;
 }
 
 function createDynamicItem(item: Item): DynamicItem | undefined {

@@ -27,10 +27,16 @@ function item(
 	};
 }
 
+const handgun = item('HandGun', 'Handgun', Rarity.Uncommon, 'A ranged weapon', 1);
+handgun.details.type_a = ItemTypeA.Weapon;
+handgun.details.type_b = ItemTypeB.WeaponHandgun;
+handgun.details.dynamic = { durability: 500, magazine_size: 8, type: 'weapon' };
+
 const items: Item[] = [
 	item('Pal_crystal', 'Paldium Fragment', Rarity.Common, 'A blue crafting material'),
 	item('LegendaryOldBow', 'Old Bow Schematic 4', Rarity.Legendary, 'Legendary weapon plans'),
-	item('RareSphere', 'Giga Sphere', Rarity.Rare, 'A stronger capture sphere')
+	item('RareSphere', 'Giga Sphere', Rarity.Rare, 'A stronger capture sphere'),
+	handgun
 ];
 
 describe('filterItems', (): void => {
@@ -103,5 +109,52 @@ describe('appendItemStacksToEmptySlots', (): void => {
 		expect(result.slots[0].count).toBe(99);
 		expect(result.addedCount).toBe(1);
 		expect(result.skippedCount).toBe(1);
+	});
+
+	it('creates complete dynamic item data for equipment', (): void => {
+		const result = appendItemStacksToEmptySlots(
+			[{ slot_index: 0, static_id: 'None', count: 0 }],
+			[{ itemId: 'HandGun', count: 1 }],
+			items,
+			false
+		);
+
+		expect(result.slots[0].dynamic_item).toMatchObject({
+			static_id: 'HandGun',
+			durability: 500,
+			remaining_bullets: 8,
+			type: 'weapon',
+			modified: true
+		});
+	});
+
+	it('supports the cheat ceiling and safely defaults missing stack limits', (): void => {
+		const cheatItem = item('CheatStack', 'Cheat Stack', Rarity.Common, '', 9999);
+		const missingLimitItem = item('MissingLimit', 'Missing Limit', Rarity.Common);
+		missingLimitItem.details.max_stack_count = undefined as unknown as number;
+		const slots: ItemContainerSlot[] = [
+			{ slot_index: 0, static_id: 'None', count: 0 },
+			{ slot_index: 1, static_id: 'None', count: 0 }
+		];
+		const result = appendItemStacksToEmptySlots(
+			slots,
+			[
+				{ itemId: 'CheatStack', count: 999999999 },
+				{ itemId: 'MissingLimit', count: 50 }
+			],
+			[cheatItem, missingLimitItem],
+			true
+		);
+
+		expect(result.slots[0].count).toBe(999999999);
+		expect(result.slots[1].count).toBe(1);
+
+		const invalidCountResult = appendItemStacksToEmptySlots(
+			[{ slot_index: 0, static_id: 'None', count: 0 }],
+			[{ itemId: 'CheatStack', count: Number.NaN }],
+			[cheatItem],
+			true
+		);
+		expect(invalidCountResult.slots[0].count).toBe(1);
 	});
 });

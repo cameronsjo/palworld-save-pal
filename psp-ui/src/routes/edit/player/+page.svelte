@@ -217,9 +217,10 @@
 		}
 
 		// The modal host injects closeModal at runtime, but its generic component type cannot express injected props.
-		// @ts-expect-error -- availableSlots is the only caller-supplied prop.
+		// @ts-expect-error -- availableSlots and cheatMode are the caller-supplied props.
 		const selections = await modal.showModal<ItemStackSelection[]>(BulkItemSelectModal, {
-			availableSlots
+			availableSlots,
+			cheatMode: appState.settings.cheat_mode ?? false
 		});
 		if (!selections?.length) return;
 
@@ -237,6 +238,9 @@
 			undefined,
 			'success'
 		);
+		if (result.skippedCount > 0) {
+			toast.add(m.no_slots_available_in_entity({ entity: m.inventory() }), m.error(), 'warning');
+		}
 	}
 
 	async function fillCommonContainer() {
