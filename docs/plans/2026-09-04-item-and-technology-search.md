@@ -26,8 +26,8 @@ Filtering and inventory-allocation decisions will live in pure, typed helper fun
 - [x] Add a bulk item picker with accessible selection controls and per-item stack quantities.
 - [x] Add a player inventory **Add items** action that fills only empty slots and reports capacity limits.
 - [x] Preserve the existing single-slot item editor and existing **Fill inventory** action.
-- [ ] Add typed technology filtering helpers and behavior tests for all searchable fields.
-- [ ] Add technology search while preserving level grouping and selection state.
+- [x] Add typed technology filtering helpers and behavior tests for all searchable fields.
+- [x] Add technology search while preserving level grouping and selection state.
 - [ ] Run focused unit tests, Svelte diagnostics, lint, and the production UI build.
 - [ ] Commit and push the implementation to `main`.
 - [ ] Run `build-image.yml`, record the produced editor image digest, and deploy it through the homelab manifest PR.

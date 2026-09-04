@@ -5,10 +5,11 @@
 	import { ASSET_DATA_PATH } from '$lib/constants';
 	import { assetLoader } from '$utils';
 	import { NumberInputModal } from '$components/modals';
-	import { Button, Tooltip } from '$components/ui';
+	import { Button, Input, Tooltip } from '$components/ui';
 	import { EntryState, type Technology } from '$types';
 	import { staticIcons } from '$types/icons';
 	import * as m from '$i18n/messages';
+	import { filterTechnologyGroups, type TechnologySearchNames } from './technologySearch';
 
 	const appState = getAppState();
 	const modal = getModalState();
@@ -17,6 +18,8 @@
 	const ancientTechPointIcon = assetLoader.loadImage(
 		`${ASSET_DATA_PATH}/img/t_icon_ancient_tech_point.webp`
 	);
+
+	let searchQuery = $state('');
 
 	const technologiesOrder = Object.entries(technologiesData.technologies).reduce(
 		(acc, [techID, techData]) => {
@@ -36,6 +39,28 @@
 			return acc;
 		},
 		{} as Record<number, { regular: string[]; ancient: string | null }>
+	);
+	const technologySearchNames: TechnologySearchNames = $derived.by(() => ({
+		items: Object.fromEntries(
+			Object.values(itemsData.items).map((item) => [
+				item.id.toLocaleLowerCase(),
+				item.info.localized_name
+			])
+		),
+		buildings: Object.fromEntries(
+			Object.entries(buildingsData.buildings).map(([buildingId, building]) => [
+				buildingId.toLocaleLowerCase(),
+				building.localized_name
+			])
+		)
+	}));
+	const visibleTechnologyOrder = $derived(
+		filterTechnologyGroups(
+			technologiesOrder,
+			searchQuery,
+			technologiesData.technologies,
+			technologySearchNames
+		)
 	);
 
 	function toggleTechnology(techID: string) {
@@ -74,7 +99,8 @@
 		if (!appState.selectedPlayer) return;
 
 		const title = type === 'tech' ? m.technology_points() : m.ancient_technology_points();
-		// @ts-ignore
+		// The modal host injects closeModal at runtime, but its generic component type cannot express injected props.
+		// @ts-expect-error -- title, value, min, and max are the caller-supplied props.
 		const result = await modal.showModal<number>(NumberInputModal, {
 			title: title,
 			value:
@@ -97,7 +123,7 @@
 
 {#snippet technologyButton(
 	techID: string,
-	isSelected: any,
+	isSelected: boolean,
 	technologyItem: Technology,
 	type: 'tech' | 'ancient'
 )}
@@ -206,7 +232,7 @@
 {#if appState.selectedPlayer}
 	<main class="h-full min-h-screen p-8">
 		<div class="mx-auto max-w-7xl">
-			<div class="mb-8 flex items-center justify-between">
+			<div class="mb-8 flex flex-wrap items-center justify-between gap-4">
 				<div class="flex gap-8">
 					<button
 						id="tech-points"
@@ -257,8 +283,17 @@
 				</div>
 			</div>
 
+			<div class="mb-6">
+				<Input
+					type="search"
+					bind:value={searchQuery}
+					placeholder={m.search_entity({ entity: m.technology({ count: 2 }) })}
+					inputClass="w-full"
+				/>
+			</div>
+
 			<div id="tech-grid">
-				{#each Object.entries(technologiesOrder) as [levelCap, levelData]}
+				{#each Object.entries(visibleTechnologyOrder) as [levelCap, levelData]}
 					{@const techIDs = levelData.regular}
 					{@const emptySlots = 8 - techIDs.length}
 					{@const ancientTechID = levelData.ancient}
@@ -286,7 +321,7 @@
 										{@render technologyButton(techID, isSelected, technologyItem, 'tech')}
 									{/if}
 								{/each}
-								{#each Array(emptySlots) as _}
+								{#each [...Array(emptySlots).keys()] as emptySlotIndex (emptySlotIndex)}
 									<div class="w-24 2xl:w-32"></div>
 								{/each}
 							</div>
@@ -303,6 +338,11 @@
 						</div>
 					</div>
 				{/each}
+				{#if Object.keys(visibleTechnologyOrder).length === 0}
+					<div class="text-surface-400 flex min-h-48 items-center justify-center">
+						{m.docs_no_results()}
+					</div>
+				{/if}
 			</div>
 		</div>
 	</main>
