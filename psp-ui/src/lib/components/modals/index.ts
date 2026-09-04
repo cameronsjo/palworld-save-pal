@@ -7,6 +7,7 @@ import ExportBlueprintModal from './export-blueprint/ExportBlueprintModal.svelte
 import ExportPalModal from './export-pal/ExportPalModal.svelte';
 import FillPalsModal from './fill-pals/FillPalsModal.svelte';
 import ImportToUpsModal from './import-to-ups/ImportToUpsModal.svelte';
+import BulkItemSelectModal from './item-select/BulkItemSelectModal.svelte';
 import ItemSelectModal from './item-select/ItemSelectModal.svelte';
 import LearnedSkillSelectModal from './learned-skill-select/LearnedSkillSelectModal.svelte';
 import MultiSkillSelectModal from './multi-skill-select/MultiSkillSelectModal.svelte';
@@ -30,6 +31,7 @@ import UpdateAvailableModal from './update-available/UpdateAvailableModal.svelte
 
 export {
 	AddToCollectionModal,
+	BulkItemSelectModal,
 	CloneToUpsModal,
 	ConfirmModal,
 	EditBaseModal,

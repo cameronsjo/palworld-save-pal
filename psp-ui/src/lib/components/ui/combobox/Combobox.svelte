@@ -5,7 +5,7 @@
 	import { cn } from '$theme';
 	import { onMount, type Snippet } from 'svelte';
 	import { debounce } from '$utils';
-	import SvelteVirtualList from '@humanspeak/svelte-virtual-list'
+	import SvelteVirtualList from '@humanspeak/svelte-virtual-list';
 	import * as m from '$i18n/messages';
 
 	let {
@@ -43,12 +43,13 @@
 	let containerRef: HTMLDivElement;
 	let listboxId = nanoid();
 	let searchTerm = $state('');
-	let filteredOptions = $state(options);
+	let filteredOptions: SelectOption[] = $state([]);
 	let isUserSearching = $state(false);
 
 	async function searchOptions() {
+		const normalizedSearchTerm = searchTerm.toLocaleLowerCase();
 		filteredOptions = options.filter((option: SelectOption) =>
-			option.label.toLowerCase().includes(searchTerm.toLowerCase())
+			(option.searchText ?? option.label).toLocaleLowerCase().includes(normalizedSearchTerm)
 		);
 	}
 
@@ -198,7 +199,7 @@
 		<div class="flex items-center justify-between">
 			<input
 				type="text"
-				class="focus:outline-hidden w-full bg-transparent"
+				class="w-full bg-transparent focus:outline-hidden"
 				{placeholder}
 				bind:value={searchTerm}
 				onfocus={handleFocus}
@@ -219,12 +220,13 @@
 		{#if isOpen}
 			<div
 				id={listboxId}
-				class={cn("bg-surface-900 border-surface-600 select-popup rounded-xs absolute left-0 right-0 mt-3 border shadow-lg h-50 z-50", _viewportClass)}
+				class={cn(
+					'bg-surface-900 border-surface-600 select-popup absolute right-0 left-0 z-50 mt-3 h-50 rounded-xs border shadow-lg',
+					_viewportClass
+				)}
 				role="listbox"
 			>
-				<SvelteVirtualList
-					items={filteredOptions}
-				>
+				<SvelteVirtualList items={filteredOptions}>
 					{#snippet renderItem(item)}
 						<div
 							class={cn(

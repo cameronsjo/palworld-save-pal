@@ -9,7 +9,16 @@
 	import { PlayerStats, PlayerHealthBadge } from '$components/player';
 	import { ItemBadge } from '$components/shared';
 	import { PlayerPresets } from '$components/presets';
-	import { TextInputModal, NumberInputModal, ItemSelectModal } from '$components/modals';
+	import {
+		BulkItemSelectModal,
+		TextInputModal,
+		NumberInputModal,
+		ItemSelectModal
+	} from '$components/modals';
+	import {
+		appendItemStacksToEmptySlots,
+		type ItemStackSelection
+	} from '$components/modals/item-select/bulkItemPicker';
 	import { assetLoader } from '$utils';
 	import { staticIcons } from '$types/icons';
 	import NumberFlow from '@number-flow/svelte';
@@ -195,6 +204,39 @@
 		if (appState.selectedPlayer) {
 			appState.selectedPlayer.state = EntryState.MODIFIED;
 		}
+	}
+
+	async function addItemsToInventory(): Promise<void> {
+		if (!appState.selectedPlayer) return;
+		const availableSlots = commonContainer.slots.filter(
+			(slot: ItemContainerSlot): boolean => slot.static_id === 'None' || slot.static_id === ''
+		).length;
+		if (availableSlots === 0) {
+			toast.add(m.no_slots_available_in_entity({ entity: m.inventory() }), m.error(), 'error');
+			return;
+		}
+
+		// The modal host injects closeModal at runtime, but its generic component type cannot express injected props.
+		// @ts-expect-error -- availableSlots is the only caller-supplied prop.
+		const selections = await modal.showModal<ItemStackSelection[]>(BulkItemSelectModal, {
+			availableSlots
+		});
+		if (!selections?.length) return;
+
+		const result = appendItemStacksToEmptySlots(
+			commonContainer.slots,
+			selections,
+			Object.values(itemsData.items),
+			appState.settings.cheat_mode ?? false
+		);
+		commonContainer.slots = result.slots;
+		appState.selectedPlayer.common_container.slots = result.slots;
+		appState.selectedPlayer.state = EntryState.MODIFIED;
+		toast.add(
+			`${m.added_label()} ${result.addedCount} ${m.item({ count: result.addedCount })}`,
+			undefined,
+			'success'
+		);
 	}
 
 	async function fillCommonContainer() {
@@ -580,6 +622,11 @@
 					<Tooltip label={m.sort_inventory()}>
 						<Button variant="ghost" size="icon" onclick={sortCommonContainer}>
 							<Icon icon="ph:sort-ascending" class="h-6 w-6" />
+						</Button>
+					</Tooltip>
+					<Tooltip label={m.add_entity({ entity: m.item({ count: 2 }) })}>
+						<Button variant="ghost" size="icon" onclick={addItemsToInventory}>
+							<Icon icon="tabler:playlist-add" class="h-6 w-6" />
 						</Button>
 					</Tooltip>
 					<Tooltip label={m.fill_entity({ entity: m.inventory() })}>

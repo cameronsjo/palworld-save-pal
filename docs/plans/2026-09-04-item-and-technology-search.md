@@ -22,10 +22,10 @@ Filtering and inventory-allocation decisions will live in pure, typed helper fun
 
 ## Checklist
 
-- [ ] Add typed item filtering helpers and behavior tests for text and inclusive rarity filters.
-- [ ] Add a bulk item picker with accessible selection controls and per-item stack quantities.
-- [ ] Add a player inventory **Add items** action that fills only empty slots and reports capacity limits.
-- [ ] Preserve the existing single-slot item editor and existing **Fill inventory** action.
+- [x] Add typed item filtering helpers and behavior tests for text and inclusive rarity filters.
+- [x] Add a bulk item picker with accessible selection controls and per-item stack quantities.
+- [x] Add a player inventory **Add items** action that fills only empty slots and reports capacity limits.
+- [x] Preserve the existing single-slot item editor and existing **Fill inventory** action.
 - [ ] Add typed technology filtering helpers and behavior tests for all searchable fields.
 - [ ] Add technology search while preserving level grouping and selection state.
 - [ ] Run focused unit tests, Svelte diagnostics, lint, and the production UI build.
