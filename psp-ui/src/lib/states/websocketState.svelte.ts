@@ -9,6 +9,41 @@ const RECONNECT_DELAY = 5000;
 const SEND_READY_TIMEOUT = 15000;
 const READY_POLL_INTERVAL = 250;
 
+/**
+ * Resolves the websocket URL for this page.
+ *
+ * `PUBLIC_WS_URL` is `$env/static/public` — fixed at BUILD time — and the
+ * Docker image bakes the loopback default `127.0.0.1:5174/ws`. Served from any
+ * other origin, a browser then dials ITSELF, every frame is dropped, and the
+ * page renders as though the backend had nothing to say. That is exactly how
+ * the deployed `/servers` list came up empty.
+ *
+ * So when the baked host is loopback and the page is NOT, the page's own origin
+ * is the only host that can be right: the server is same-origin with it by
+ * construction (the ingress proxies `/ws` alongside the app), and the backend's
+ * own `Origin` allowlist assumes precisely that. A baked host that is not
+ * loopback is an explicit choice and is left alone, as is a genuinely
+ * loopback-served page (desktop, `vite dev`).
+ *
+ * Exported for tests; `connect` is the only caller.
+ */
+export function resolveWebsocketUrl(
+	bakedWsUrl: string,
+	location: { protocol: string; hostname: string; host: string },
+	clientId: number | string
+): string {
+	const protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+	const [bakedHost, ...pathParts] = bakedWsUrl.split('/');
+	const isLoopback = (name: string) =>
+		name === '127.0.0.1' || name === 'localhost' || name === '[::1]' || name === '::1';
+	const bakedHostname = bakedHost.replace(/:\d+$/, '');
+
+	const host =
+		isLoopback(bakedHostname) && !isLoopback(location.hostname) ? location.host : bakedHost;
+	const path = pathParts.length > 0 ? `/${pathParts.join('/')}` : '';
+	return `${protocol}${host}${path}/${clientId}`;
+}
+
 class SocketState {
 	#clientId = Date.now();
 	// Optional, NOT `!`: a route's `onMount` runs BEFORE the layout's, so the
@@ -25,8 +60,7 @@ class SocketState {
 	#messageQueue = new Map<string, (value: any) => void>();
 
 	connect(context: WSHandlerContext) {
-		const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-		const wsUrl = `${protocol}${PUBLIC_WS_URL}/${this.#clientId}`;
+		const wsUrl = resolveWebsocketUrl(PUBLIC_WS_URL, window.location, this.#clientId);
 		this.#websocket = new WebSocket(wsUrl);
 
 		this.#websocket.onopen = () => {
