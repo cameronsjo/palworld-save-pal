@@ -30,7 +30,7 @@ Filtering and inventory-allocation decisions will live in pure, typed helper fun
 - [x] Add technology search while preserving level grouping and selection state.
 - [x] Run focused unit tests, Svelte diagnostics, lint, and the production UI build.
 - [x] Commit and push the implementation to `main`.
-- [ ] Run `build-image.yml`, record the produced editor image digest, and deploy it through the homelab manifest PR.
+- [x] Run `build-image.yml`, record the produced editor image digest, and deploy it through the homelab manifest PR.
 
 ## Verification notes
 
@@ -39,3 +39,5 @@ Filtering and inventory-allocation decisions will live in pure, typed helper fun
 - `svelte-check` reports no errors in changed files; its full-project run remains red on the pre-existing tuple inference error in `src/routes/layoutPathRestore.test.ts:26`.
 - The full unit suite remains red on 10 pre-existing `MapLayerPanel` assertions; 1,732 tests pass and this change does not touch that component or its tests.
 - This repository has no changelog file, so this consumer-visible change cannot add an entry without introducing a new release-documentation convention.
+- GitHub Actions run `33930807846` published digest `sha256:1b21f4b2e7bfdd5b177181f828211e9c6ff5abb3ef08f961ff5cb6bf7493da9a`.
+- Homelab PR #477 merged the digest as `6ca5fff2663e2bc771b59fe33c742e5f0d852237`; Flux applied that revision, the replacement pod reached `1/1 Running` with zero restarts, and the HTTPS health check passed.
